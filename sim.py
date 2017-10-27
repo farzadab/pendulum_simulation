@@ -1,18 +1,30 @@
 from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
+import argparse
 import sys
 
 #  from pyquaternion import Quaternion    ## would be useful for 3D simulation
 import numpy as np
 
+parser = argparse.ArgumentParser(description='Simulate a multi-link pendulum')
+parser.add_argument('--nlinks', metavar='N', type=int, default=1, help='number of links')
+parser.add_argument('--timestep', metavar='dT', type=float, default=0.01, help='timestep in seconds')
+parser.add_argument('--scv', metavar='Kp', type=float, default=0.2, help='constant value for velocity stabilization')
+parser.add_argument('--scp', metavar='Kd', type=float, default=0.2, help='constant value for position stabilization')
+
+args = parser.parse_args()
+
 window = 0     # number of the glut window
 theta = 0.0
 simTime = 0
-dT = 0.01
+dT = args.timestep
 simRun = True
 RAD_TO_DEG = 180.0/3.1416
-nLinks = 4
+nLinks = args.nlinks
+Kp = args.scv
+Kd = args.scp
+Kf = 0.05 * nLinks + 0.01
 
 #####################################################
 #### Link class, i.e., for a rigid body
@@ -167,7 +179,7 @@ def generalizedDiag(matrices, offset=0):
 
 def SimWorld():
         global simTime, dT, simRun, fixedPoint
-        global links
+        global links, Kp, Kd, Kf
 
         deltaTheta = 2.4
         if (simRun==False):             ## is simulation stopped?
@@ -222,18 +234,15 @@ def SimWorld():
                 diff_position = last_constrained_point_posn - (link.posn + r_world)
                 # diff_velocity = 0
                 # diff_position = 0
-                kp = 1
-                kd = 1
                 weird_term = np.cross(link.omega, np.cross(link.omega, r_world))
-                kf = 0.05 * nLinks + 0.01
                 b_mass.append(
                         [0, -10 * link.mass, 0,]
                 )
                 b_mass.append(
-                        -1 * np.cross(link.omega, np.matmul(I_world, link.omega)) - kf * np.array(link.omega)
+                        -1 * np.cross(link.omega, np.matmul(I_world, link.omega)) - Kf * np.array(link.omega)
                 )
                 b_cons.append(
-                        weird_term + last_weird_term - kp * (diff_velocity) - kd * (diff_position)
+                        weird_term + last_weird_term - Kp * (diff_velocity) - Kd * (diff_position)
                 )
                 last_weird_term = weird_term
                 last_constrained_point_velocity = link.vel - np.cross(link.omega, r_world)
