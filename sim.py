@@ -12,6 +12,7 @@ simTime = 0
 dT = 0.01
 simRun = True
 RAD_TO_DEG = 180.0/3.1416
+nLinks = 4
 
 #####################################################
 #### Link class, i.e., for a rigid body
@@ -43,7 +44,8 @@ class Link:
 
 def main():
         global window
-        global link1, link2       
+        global links
+        global nLinks   
         glutInit(sys.argv)
         glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH)     # display mode 
         glutInitWindowSize(640, 480)                                  # window size
@@ -56,8 +58,7 @@ def main():
         glutKeyboardFunc(keyPressed)     # register the function to call when keyboard is pressed
         InitGL(640, 480)                 # initialize window
         
-        link1 = Link();
-        link2 = Link();
+        links = [Link() for _ in range(nLinks)]
         resetSim()
         
         glutMainLoop()                   # start event processing loop
@@ -67,9 +68,12 @@ def main():
 #####################################################
 
 initialTheta = [0, 0, np.pi/4]
+initialPosn = np.array([0.0, 0.0, 0.0])
+linkHeight = 1.0
+fixedPoint = np.array([0.0, linkHeight/2, 0])
 
 def resetSim():
-        global link1, link2, link3, link4
+        global links
         global simTime, simRun
 
         printf("Simulation reset\n")
@@ -77,19 +81,18 @@ def resetSim():
         simTime = 0
 
         # link1.size=[0.04, 1.0, 0.12]
-        link1.size=[0.1, 1.0, 0.1]
-        link1.color=[1,0.9,0.9]
-        link1.posn=np.array([0.0,0.0,0.0])
-        link1.vel=np.array([0.0,0.0,0.0])
-        link1.theta = np.array(initialTheta)
-        link1.omega = np.array([0.0, 0, 0.0])        ## radians per second
-        
-        link2.size=[0.04, 1.0, 0.12]
-        link2.color=[0.9,0.9,1.0]
-        link2.posn=np.array([1.0,0.0,0.0])
-        link2.vel=np.array([0.0,4.0,0.0])
-        link2.theta = -0.2
-        link2.omega = 0        ## radians per second
+        for i, link in enumerate(links):
+                link.size = [0.1, linkHeight, 0.1]
+                link.color = [1, 0.9, 0.9]
+                if i == nLinks-1:
+                        link.theta = np.array(initialTheta)
+                else:
+                        link.theta = np.array([0.0, 0.0, 0.0])
+                link.posn = initialPosn - (i-nLinks/2) * np.array([0.0, linkHeight, 0.0]) - np.matmul(getRotMatrix(link.theta), fixedPoint)
+                link.initialTheta = link.theta
+                link.initialPosn = link.posn
+                link.vel = np.array([0.0, 0.0, 0.0])
+                link.omega = np.array([0.0, 0.0, 0.0])        ## radians per second
 
 #####################################################
 #### keyPressed():  called whenever a key is pressed
@@ -123,14 +126,14 @@ def getRotMatrix(theta):
                 ]),
                 np.matmul(
                         np.array([
-                                [1, 0, 0],
-                                [0, np.cos(theta[0]), -np.sin(theta[0])],
-                                [0, np.sin(theta[0]), np.cos(theta[0])],
-                        ]),
-                        np.array([
                                 [np.cos(theta[1]), 0, np.sin(theta[1])],
                                 [0, 1, 0],
                                 [-np.sin(theta[1]), 0, np.cos(theta[1])],
+                        ]),
+                        np.array([
+                                [1, 0, 0],
+                                [0, np.cos(theta[0]), -np.sin(theta[0])],
+                                [0, np.sin(theta[0]), np.cos(theta[0])],
                         ])
                 )
         )
@@ -148,8 +151,8 @@ def cProdMat(x):
         ])
 
 
-def generalizedDiag(matrices):
-        n_rows = sum([m.shape[1] for m in matrices])
+def generalizedDiag(matrices, offset=0):
+        n_rows = sum([m.shape[1] for m in matrices]) + offset * (len(matrices)-1)
         rows = []
         past_rows = 0
         for m in matrices:
@@ -158,13 +161,13 @@ def generalizedDiag(matrices):
                         m,
                         np.zeros((m.shape[0], n_rows-past_rows-m.shape[1])),
                 ]))
-                past_rows += m.shape[1]
+                past_rows += m.shape[1] + offset
         return np.vstack(rows)
 
 
 def SimWorld():
-        global simTime, dT, simRun
-        global link1, link2
+        global simTime, dT, simRun, fixedPoint
+        global links
 
         deltaTheta = 2.4
         if (simRun==False):             ## is simulation stopped?
@@ -177,70 +180,107 @@ def SimWorld():
             ####  Here is a simple example of using numpy to solve a linear system.
         # a = np.array([[2, -4, 4], [34, 3, -1], [1, 1, 1]])
         # omega_vec = [0, 0, link1.omega]
-        r_local = np.array([0, 0.5, 0])
-        I_local = np.diag(
-                link1.mass / 12 * (sum(np.array(link1.size) ** 2) - np.array(link1.size) ** 2)
-        )
-        R = getRotMatrix(link1.theta)
-        r_world = np.matmul(R, r_local)
-        I_world = np.matmul(R, np.matmul(I_local, np.linalg.inv(R)))
-        # print(r_world)
-        z = np.zeros((3,3))
-        gen_mass = generalizedDiag([
-                np.diag([link1.mass] * 3),
-                I_world
-        ])
-        J = np.vstack([
-                np.diag([-1] * 3),
-                -cProdMat(r_world),
-        ])
+        r_local = fixedPoint
+        gen_mass = []
+        J = []
+        # J2 = []
+        b_mass = []
+        b_cons = []
+        last_weird_term = 0
+        last_constrained_point_velocity = np.array([0.0, 0.0, 0.0])
+        last_constrained_point_posn = links[0].initialPosn + np.matmul(getRotMatrix(links[0].theta), r_local)
+        for i, link in enumerate(links):
+                I_local = np.diag(
+                        link.mass / 12 * (sum(np.array(link.size) ** 2) - np.array(link.size) ** 2)
+                )
+                R = getRotMatrix(link.theta)
+                r_world = np.matmul(R, r_local)
+                I_world = np.matmul(R, np.matmul(I_local, np.linalg.inv(R)))
+                # print(r_world)
+                # z = np.zeros((3,3))
+                gen_mass.append(
+                        generalizedDiag([
+                                np.diag([link.mass] * 3),
+                                I_world
+                        ])
+                )
+                if i != len(links)-1:
+                        J.append(
+                                matrixStack([
+                                        [np.diag([-1] * 3), np.diag([1] * 3)],
+                                        [-cProdMat(r_world), -cProdMat(r_world)],
+                                ])
+                        )
+                else:
+                        J.append(
+                                matrixStack([
+                                        [np.diag([-1] * 3)],
+                                        [-cProdMat(r_world)],
+                                ])
+                        )
+                diff_velocity = last_constrained_point_velocity - (link.vel + np.cross(link.omega, r_world))
+                diff_position = last_constrained_point_posn - (link.posn + r_world)
+                # diff_velocity = 0
+                # diff_position = 0
+                kp = 1
+                kd = 1
+                weird_term = np.cross(link.omega, np.cross(link.omega, r_world))
+                kf = 0.05 * nLinks + 0.01
+                b_mass.append(
+                        [0, -10 * link.mass, 0,]
+                )
+                b_mass.append(
+                        -1 * np.cross(link.omega, np.matmul(I_world, link.omega)) - kf * np.array(link.omega)
+                )
+                b_cons.append(
+                        weird_term + last_weird_term - kp * (diff_velocity) - kd * (diff_position)
+                )
+                last_weird_term = weird_term
+                last_constrained_point_velocity = link.vel - np.cross(link.omega, r_world)
+                last_constrained_point_posn = (link.posn - r_world)
+        gen_mass_mat = generalizedDiag(gen_mass)
+        J_mat = generalizedDiag(J, -3)
+        z = np.zeros((J_mat.shape[1], J_mat.shape[1]))
         A = matrixStack([
-                [gen_mass, J],
-                [J.transpose(), z]
+                [gen_mass_mat, J_mat],
+                [J_mat.transpose(), z]
         ])
-        
-        diff_velocity = link1.vel + np.cross(link1.omega, r_world)
-        diff_position = np.matmul(getRotMatrix(initialTheta), r_local) - (link1.posn + r_world)
-        # diff_velocity = 0
-        # diff_position = 0
-        kp = -0.1
-        kd = 0.1
-        weird_term = np.cross(link1.omega, np.cross(link1.omega, r_world)) # - kp * (diff_velocity) - kd * (diff_position)
-        kf = -0.07
         b = np.hstack([
-                [0, -10 * link1.mass, 0,],
-                np.cross(link1.omega, np.matmul(I_world, link1.omega)) + kf * np.array(link1.omega),
-                weird_term,
+                np.hstack(b_mass),
+                np.hstack(b_cons)
         ])
+        # print(b)
         x = np.linalg.solve(A, b)
-        acc1 = x[0:3]
-        omega_dot1 = x[3:6]
-
-        #### explicit Euler integration to update the state
-        link1.posn += link1.vel*dT # + acc1*dT*dT/2
-        link1.vel += acc1*dT
-        link1.theta += link1.omega*dT # + omega_dot1*dT*dT/2
-        link1.omega += omega_dot1*dT
+        # print(x.reshape((-1, 3)))
+        for i, link in enumerate(links):
+                acc = x[i*6:i*6+3]
+                omega_dot = x[i*6+3:i*6+6]
+                #### explicit Euler integration to update the state
+                link.posn += link.vel*dT # + acc*dT*dT/2
+                link.vel += acc*dT
+                link.theta += link.omega*dT # + omega_dot*dT*dT/2
+                link.omega += omega_dot*dT
 
         simTime += dT
 
             #### draw the updated state
         DrawWorld()
-        printf("simTime=%.2f\n",simTime)
+        # printf("simTime=%.2f\n",simTime)
 
 #####################################################
 #### DrawWorld():  draw the world
 #####################################################
 
 def DrawWorld():
-        global link1, link2
+        global links
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);	# Clear The Screen And The Depth Buffer
         glLoadIdentity();
-        gluLookAt(1,1,3,  0,0,0,  0,1,0)
+        gluLookAt(2,2,6,  0,0,0,  0,1,0)
 
         DrawOrigin()
-        link1.draw()
+        for link in links:
+                link.draw()
         # link2.draw()
 
         glutSwapBuffers()                      # swap the buffers to display what was just drawn
