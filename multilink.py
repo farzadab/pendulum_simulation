@@ -16,7 +16,7 @@ RAD_TO_DEG = 180.0/3.1416
 #####################################################
 #### Link class, i.e., for a rigid body
 #####################################################
-times = 0
+
 class Link:
         color=[0,0,0]    ## draw color
         size=[1,1,1]     ## dimensions
@@ -29,9 +29,7 @@ class Link:
         def draw(self):      ### steps to draw a link
                 glPushMatrix()                                            ## save copy of coord frame
                 glTranslatef(self.posn[0], self.posn[1], self.posn[2])    ## move 
-                glRotatef(self.theta[0]*RAD_TO_DEG,  1, 0, 0)                             ## rotate
-                glRotatef(self.theta[1]*RAD_TO_DEG,  0, 1, 0)                             ## rotate
-                glRotatef(self.theta[2]*RAD_TO_DEG,  0, 0, 1)                             ## rotate
+                glRotatef(self.theta*RAD_TO_DEG,  0,0,1)                             ## rotate
                 glScale(self.size[0], self.size[1], self.size[2])         ## set size
                 glColor3f(self.color[0], self.color[1], self.color[2])    ## set colour
                 DrawCube()                                                ## draw a scaled cube
@@ -66,10 +64,10 @@ def main():
 #### keyPressed():  called whenever a key is pressed
 #####################################################
 
-initialTheta = [0, 0, np.pi/4]
+initialTheta = np.pi/4
 
 def resetSim():
-        global link1, link2, link3, link4
+        global link1, link2
         global simTime, simRun
 
         printf("Simulation reset\n")
@@ -81,8 +79,8 @@ def resetSim():
         link1.color=[1,0.9,0.9]
         link1.posn=np.array([0.0,0.0,0.0])
         link1.vel=np.array([0.0,0.0,0.0])
-        link1.theta = np.array(initialTheta)
-        link1.omega = np.array([0.0, 0, 0.0])        ## radians per second
+        link1.theta = initialTheta
+        link1.omega = 0        ## radians per second
         
         link2.size=[0.04, 1.0, 0.12]
         link2.color=[0.9,0.9,1.0]
@@ -115,30 +113,14 @@ def keyPressed(key,x,y):
 #####################################################
 
 def getRotMatrix(theta):
-        return  np.matmul(
-                np.array([
-                        [np.cos(theta[2]), -np.sin(theta[2]), 0],
-                        [np.sin(theta[2]), np.cos(theta[2]), 0],
-                        [0, 0, 1],
-                ]),
-                np.matmul(
-                        np.array([
-                                [1, 0, 0],
-                                [0, np.cos(theta[0]), -np.sin(theta[0])],
-                                [0, np.sin(theta[0]), np.cos(theta[0])],
-                        ]),
-                        np.array([
-                                [np.cos(theta[1]), 0, np.sin(theta[1])],
-                                [0, 1, 0],
-                                [-np.sin(theta[1]), 0, np.cos(theta[1])],
-                        ])
-                )
-        )
-
+        return  np.array([
+                [np.cos(theta), -np.sin(theta), 0],
+                [np.sin(theta), np.cos(theta), 0],
+                [0, 0, 1],
+        ])
 
 def matrixStack(matrices):
         return np.vstack([np.hstack(r) for r in matrices])
-
 
 def cProdMat(x):
         return np.array([
@@ -146,21 +128,6 @@ def cProdMat(x):
                 [x[2], 0, -x[0]],
                 [-x[1], x[0], 0],
         ])
-
-
-def generalizedDiag(matrices):
-        n_rows = sum([m.shape[1] for m in matrices])
-        rows = []
-        past_rows = 0
-        for m in matrices:
-                rows.append(np.hstack([
-                        np.zeros((m.shape[0], past_rows)),
-                        m,
-                        np.zeros((m.shape[0], n_rows-past_rows-m.shape[1])),
-                ]))
-                past_rows += m.shape[1]
-        return np.vstack(rows)
-
 
 def SimWorld():
         global simTime, dT, simRun
@@ -171,12 +138,16 @@ def SimWorld():
                 return
 
             #### solve for the equations of motion (simple in this case!)
+        acc1 = np.array([0,-10,0])       ### linear acceleration = [0, -G, 0]
+        acc2 = np.array([0,-10,0])       ### linear acceleration = [0, -G, 0]
+        omega_dot1 = 0.0                 ### assume no angular acceleration
+        omega_dot2 = 0.0                 ### assume no angular acceleration
 
             ####  for the constrained one-link pendulum, and the 4-link pendulum,
             ####  you will want to build the equations of motion as a linear system, and then solve that.
             ####  Here is a simple example of using numpy to solve a linear system.
         # a = np.array([[2, -4, 4], [34, 3, -1], [1, 1, 1]])
-        # omega_vec = [0, 0, link1.omega]
+        omega_vec = [0, 0, link1.omega]
         r_local = np.array([0, 0.5, 0])
         I_local = np.diag(
                 link1.mass / 12 * (sum(np.array(link1.size) ** 2) - np.array(link1.size) ** 2)
@@ -186,41 +157,40 @@ def SimWorld():
         I_world = np.matmul(R, np.matmul(I_local, np.linalg.inv(R)))
         # print(r_world)
         z = np.zeros((3,3))
-        gen_mass = generalizedDiag([
-                np.diag([link1.mass] * 3),
-                I_world
-        ])
-        J = np.vstack([
-                np.diag([-1] * 3),
-                -cProdMat(r_world),
-        ])
         A = matrixStack([
-                [gen_mass, J],
-                [J.transpose(), z]
+                [np.diag([link1.mass] * 3), z, np.diag([-1] * 3)],
+                [z, I_world, -cProdMat(r_world)],
+                [np.diag([-1] * 3), cProdMat(r_world), z],
         ])
         
-        diff_velocity = link1.vel + np.cross(link1.omega, r_world)
-        diff_position = np.matmul(getRotMatrix(initialTheta), r_local) - (link1.posn + r_world)
-        # diff_velocity = 0
-        # diff_position = 0
+        # diff_velocity = link1.vel + np.cross(omega_vec, r_world)
+        # diff_position = np.matmul(getRotMatrix(initialTheta), r_local) - (link1.posn + r_world)
+        diff_velocity = 0
+        diff_position = 0
         kp = -0.1
         kd = 0.1
-        weird_term = np.cross(link1.omega, np.cross(link1.omega, r_world)) # - kp * (diff_velocity) - kd * (diff_position)
-        kf = -0.07
-        b = np.hstack([
-                [0, -10 * link1.mass, 0,],
-                np.cross(link1.omega, np.matmul(I_world, link1.omega)) + kf * np.array(link1.omega),
-                weird_term,
+        weird_term = np.cross(omega_vec, np.cross(omega_vec, r_world)) - kp * (diff_velocity) - kd * (diff_position)
+        
+        b = np.array([
+                0, -10 * link1.mass, 0,
+                # w_term2[0], w_term2[1], w_term2[2],
+                0, 0, 0,
+                weird_term[0], weird_term[1], weird_term[2]
         ])
         x = np.linalg.solve(A, b)
         acc1 = x[0:3]
-        omega_dot1 = x[3:6]
+        omega_dot1 = x[5]
 
         #### explicit Euler integration to update the state
         link1.posn += link1.vel*dT # + acc1*dT*dT/2
         link1.vel += acc1*dT
         link1.theta += link1.omega*dT # + omega_dot1*dT*dT/2
         link1.omega += omega_dot1*dT
+
+        link2.posn += link2.vel*dT
+        link2.vel += acc2*dT
+        link2.theta += link2.omega*dT
+        link2.omega += omega_dot2*dT
 
         simTime += dT
 
@@ -241,7 +211,7 @@ def DrawWorld():
 
         DrawOrigin()
         link1.draw()
-        # link2.draw()
+        link2.draw()
 
         glutSwapBuffers()                      # swap the buffers to display what was just drawn
 
