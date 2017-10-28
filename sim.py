@@ -30,7 +30,7 @@ Kd = args.scp
 Kf = 0.05 * nLinks + 0.01
 KGp = args.gsv
 KGd = args.gsp
-groundPlane = 0.05
+groundPlane = 0.05  # I couldn't make the ground opaque, so I'm setting the ground to be a little bit higher
 
 #####################################################
 #### Link class, i.e., for a rigid body
@@ -270,7 +270,7 @@ def SimWorld():
                 b_mass.append(
                         -1 * np.cross(link.omega, np.matmul(I_world, link.omega))
                         - Kf * np.array(link.omega)
-                        - np.cross(r_world, ground_force_value + ground_friction_value)
+                        + np.cross(low_p - link.posn, ground_force_value + ground_friction_value)
                 )
                 b_cons.append(
                         weird_term + last_weird_term - Kp * (diff_velocity) - Kd * (diff_position)
