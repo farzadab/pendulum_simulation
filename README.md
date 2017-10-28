@@ -36,3 +36,7 @@ python3 sim.py --nlinks 4
 |q or ESC | will quit simulation|
 |space | pauses the sim|
 |r | resets the simulation|
+
+
+## Images
+![4 link demo](https://github.com/farzadab/pendulum_simulation/raw/master/demo/4links.png)
