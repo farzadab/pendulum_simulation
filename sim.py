@@ -10,8 +10,8 @@ import numpy as np
 parser = argparse.ArgumentParser(description='Simulate a multi-link pendulum')
 parser.add_argument('--nlinks', metavar='N', type=int, default=1, help='number of links')
 parser.add_argument('--timestep', metavar='dT', type=float, default=0.01, help='timestep in seconds')
-parser.add_argument('--scv', metavar='Kp', type=float, default=2, help='constant value for velocity stabilization')
-parser.add_argument('--scp', metavar='Kd', type=float, default=0.2, help='constant value for position stabilization')
+parser.add_argument('--scv', metavar='Kp', type=float, default=1, help='constant value for velocity stabilization')
+parser.add_argument('--scp', metavar='Kd', type=float, default=2, help='constant value for position stabilization')
 parser.add_argument('--gsv', metavar='KGp', type=float, default=100, help='ground stiffness factor for velocity')
 parser.add_argument('--gsp', metavar='KGd', type=float, default=100, help='ground stiffness factor for position')
 
