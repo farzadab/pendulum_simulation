@@ -3,17 +3,27 @@ from OpenGL.GLUT import *
 from OpenGL.GLU import *
 import argparse
 import sys
-
 #  from pyquaternion import Quaternion    ## would be useful for 3D simulation
 import numpy as np
 
+from bokeh.plotting import figure, output_file, show
+
+
 parser = argparse.ArgumentParser(description='Simulate a multi-link pendulum')
 parser.add_argument('--nlinks', metavar='N', type=int, default=1, help='number of links')
-parser.add_argument('--timestep', metavar='dT', type=float, default=0.01, help='timestep in seconds')
 parser.add_argument('--scv', metavar='Kp', type=float, default=1, help='constant value for velocity stabilization')
 parser.add_argument('--scp', metavar='Kd', type=float, default=2, help='constant value for position stabilization')
 parser.add_argument('--gsv', metavar='KGp', type=float, default=100, help='ground stiffness factor for velocity')
 parser.add_argument('--gsp', metavar='KGd', type=float, default=100, help='ground stiffness factor for position')
+parser.add_argument('--timestep', metavar='dT', type=float, default=0.01, help='timestep in seconds')
+gplane_parser = parser.add_mutually_exclusive_group(required=False)
+gplane_parser.add_argument('--gplane', dest='groundplane', action='store_true', help='add a ground plane')
+gplane_parser.add_argument('--no-gplane', dest='groundplane', action='store_false', help='no ground plane')
+parser.set_defaults(groundplane=True)
+plot_parser = parser.add_mutually_exclusive_group(required=False)
+plot_parser.add_argument('--plot', dest='plot', action='store_true', help='plot energies at the end (uses a browser)')
+plot_parser.add_argument('--no-plot', dest='plot', action='store_false', help='do not plot the energies')
+parser.set_defaults(plot=False)
 
 args = parser.parse_args()
 
@@ -30,7 +40,13 @@ Kd = args.scp
 Kf = 0.05 * nLinks + 0.01
 KGp = args.gsv
 KGd = args.gsp
-groundPlane = 0.05  # I couldn't make the ground opaque, so I'm setting the ground to be a little bit higher
+if args.groundplane:
+        groundPlane = 0.05  # I couldn't make the ground opaque, so I'm setting the ground to be a little bit higher
+else:
+        groundPlane = -10e10
+
+KEs = []
+PEs = []
 
 #####################################################
 #### Link class, i.e., for a rigid body
@@ -120,19 +136,30 @@ def resetSim():
 #####################################################
 
 def keyPressed(key,x,y):
-    global simRun
+    global simRun, args
     ch = key.decode("utf-8")
     if ch == ' ':                #### toggle the simulation
             if (simRun == True):
                  simRun = False
             else:
                  simRun = True
-    elif ch == chr(27):          #### ESC key
-            sys.exit()
-    elif ch == 'q':              #### quit
+    elif ch == 'q' or ch == chr(27):  #### quit
+            if args.plot:
+                plotEnergies()
             sys.exit()
     elif ch == 'r':              #### reset simulation
             resetSim()
+
+def plotEnergies():
+        '''
+        Plots kinetic, potential, and total energies at the end of the simulation (if enabled)
+          - Open a browser for the plot
+        '''
+        plot = figure(plot_width=1000, plot_height=300)
+        plot.line(range(len(KEs)), KEs)
+        plot.line(range(len(PEs)), PEs)
+        plot.line(range(len(PEs)), np.add(KEs, PEs))
+        show(plot)
 
 #####################################################
 #### SimWorld():  simulates a time step
@@ -200,6 +227,7 @@ def getLowestPointWithVel(link, points):
 def SimWorld():
         global simTime, dT, simRun, fixedPoint
         global links, Kp, Kd, Kf, G, KGd, KGp, groundPlane
+        global KEs, PEs
 
         deltaTheta = 2.4
         if (simRun==False):             ## is simulation stopped?
@@ -221,6 +249,8 @@ def SimWorld():
         last_weird_term = 0
         last_constrained_point_velocity = np.array([0.0, 0.0, 0.0])
         last_constrained_point_posn = links[0].initialPosn + np.matmul(getRotMatrix(links[0].theta), r_local)
+        KEs.append(0)
+        PEs.append(0)
         for i, link in enumerate(links):
                 I_local = np.diag(
                         link.mass / 12 * (sum(np.array(link.size) ** 2) - np.array(link.size) ** 2)
@@ -229,6 +259,11 @@ def SimWorld():
                 r_world = np.matmul(R, r_local)
                 I_world = np.matmul(R, np.matmul(I_local, np.linalg.inv(R)))
                 # print(r_world)
+                PEs[-1] += link.mass * G * link.posn[1]
+                KEs[-1] += (
+                        link.mass / 2.0 * np.dot(link.vel, link.vel) +
+                        np.matmul(r_world, np.matmul(I_world, r_world.transpose())) / 2
+                )
                 # z = np.zeros((3,3))
                 gen_mass.append(
                         generalizedDiag([
@@ -287,6 +322,7 @@ def SimWorld():
                 np.hstack(b_mass),
                 np.hstack(b_cons)
         ])
+        print('\rKE: %4.1f   PE: %4.1f   Total: %4.1f' % (KEs[-1], PEs[-1], KEs[-1] + PEs[-1]), end='')
         # print(b)
         x = np.linalg.solve(A, b)
         # print(x.reshape((-1, 3)))
@@ -358,6 +394,8 @@ def ReSizeGLScene(Width, Height):
 #####################################################
 
 def DrawOrigin():
+        global args
+
         glLineWidth(3.0);
 
         glColor3f(1,0.5,0.5)   ## light red x-axis
@@ -378,13 +416,14 @@ def DrawOrigin():
         glVertex3f(0,0,1)
         glEnd()
 
-        glColor3f(0.8,0.8,0.8)   ## ground plane
-        glBegin(GL_POLYGON)
-        glVertex3f(1.5,0,1.5)
-        glVertex3f(-1.5,0,1.5)
-        glVertex3f(-1.5,0,-1.5)
-        glVertex3f(1.5,0,-1.5)
-        glEnd()
+        if args.groundplane:
+                glColor3f(0.8,0.8,0.8)   ## ground plane
+                glBegin(GL_POLYGON)
+                glVertex3f(1.5,0,1.5)
+                glVertex3f(-1.5,0,1.5)
+                glVertex3f(-1.5,0,-1.5)
+                glVertex3f(1.5,0,-1.5)
+                glEnd()
 
 #####################################################
 #### DrawCube():  draws a cube that spans from (-1,-1,-1) to (1,1,1)
