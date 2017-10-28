@@ -48,3 +48,4 @@ python3 sim.py --nlinks 4 --no-gplane --plot
 
 ## Images
 ![4 link demo](https://github.com/farzadab/pendulum_simulation/raw/master/demo/4links.png)
+![Energies plot](https://github.com/farzadab/pendulum_simulation/raw/master/demo/energy_plot.png)
