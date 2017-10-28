@@ -1,0 +1,93 @@
+\documentclass[a4paper,11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath}
+\usepackage[colorlinks, allcolors=blue]{hyperref}
+\usepackage{graphicx}
+\usepackage{array}
+
+\newcolumntype{C}{>{\centering\arraybackslash}m{2.2cm}}
+\newcolumntype{D}{>{\arraybackslash}m{.4cm}}
+\newcolumntype{E}{>{\centering\arraybackslash}m{2.13cm}}
+\newcolumntype{N}{@{}m{0pt}@{}}
+
+\title{Assignment 4}
+\author{Farzad Abdolhosseini}
+
+\begin{document}
+
+\maketitle
+
+\section{One-link pendulum}
+First, we write out the equations of motion:
+\begin{enumerate}
+  \item Newton equation:
+    \begin{align*}
+      \sum F &= M_1 \ddot{P_1}\\
+      \Rightarrow F_c + M_1 g &= M_1 \ddot{P_1}\\
+      \Rightarrow M_1 \ddot{P_1} - F_c &= M_1 g
+    \end{align*}
+    
+  \item Euler equation:
+    \begin{align*}
+      \sum \tau &= I_{1_w} \dot{\omega_1} + \omega_1 \times I_{1_w} \omega_1\\
+      \Rightarrow r_w \times F_c &= I_{1_w} \dot{\omega_1} + \omega_1 \times I_{1_w} \omega_1\\
+      \Rightarrow I_{1_w} \dot{\omega_1} - r_w \times F_c &= \omega_1 \times I_{1_w} \omega_1\\
+ I_{1_w} \dot{\omega_1} - \widetilde{r_w} F_c &= \omega_1 \times I_{1_w} \omega_1\\
+    \end{align*}
+    
+  \item Fixed point constraint:
+    \begin{align*}
+      &P_{1_c} = A\\
+      \Rightarrow\quad &\dot{P_{1_c}} = 0\\
+      \Rightarrow\quad &\ddot{P_{1_c}} = 0\\
+      \Rightarrow\quad &\ddot{P_{1_c}} = \ddot{P_1} + \dot{\omega_1} \times r_w + \omega_1 \times (\omega_1 \times r_w) = 0\\
+      \Rightarrow\quad &-\ddot{P_1} + \widetilde{r_w}\dot{\omega_1} = \omega_1 \times (\omega_1 \times r_w)\\
+    \end{align*}
+\end{enumerate}
+
+
+Now, we have to arrange them in a matrix in the form of $Ax = b$:
+\begin{tabular}{|C|C|C|N}
+  \hline
+  M & & $\begin{array}{DDD} -1 &  &  \\[.4cm]  & -1 &  \\[.4cm]  &  & -1 \\[.4cm] \end{array}$ & \\[2.2cm]
+  \hline
+   & I & $-\widetilde{r_w}$ & \\[2.2cm]
+  \hline
+  $\begin{array}{DDD} -1 &  &  \\[.4cm]  & -1 &  \\[.4cm]  &  & -1 \\[.4cm] \end{array}$ & $\widetilde{r_w}$ & & \\[2.2cm]
+  \hline
+\end{tabular}
+\begin{tabular}{|D|N}
+  \hline
+  $\ddot{P_1}$ &\\[2.2cm]
+  \hline
+  $\dot{\omega_1}$ &\\[2.2cm]
+  \hline
+  $F_c$ &\\[2.2cm]
+  \hline
+\end{tabular}
+=
+\begin{tabular}{|E|N}
+  \hline
+  $M_1 g$ &\\[2.2cm]
+  \hline
+  $\omega_1 \times I_{1_w} \omega_1$ &\\[2.2cm]
+  \hline
+  $\omega_1 \times (\omega_1 \times r_w)$ &\\[2.2cm]
+  \hline
+\end{tabular}
+
+\vspace{6mm}
+Then, the only missing link is to calculate the moment of inertia. By symmetry, $I_{1_L}$, i.e. innertia in the local frame, must be a diagonal matrix. Also, a \href{https://en.wikipedia.org/wiki/List_of_moments_of_inertia}{quick search} gives the formula for a solid cuboid as:
+\begin{align*}
+  I_{1_l} = \frac{m}{12}\begin{bmatrix}w^2 + d^2 & 0 & 0\\ 0 & d^2 + h^2 & 0\\ 0 & 0 & w^2+h^2\end{bmatrix}
+\end{align*}
+
+Therefore, we can get the innertia in the world frame just by applying the rotation matrix:
+$$I_{1_w} = R \; I_{1_l} \; R^{-1}$$
+
+Also, it's important to note that the $r_w$ here refers to the distance from the center of mass of the pendulum to the fixed point in the world frame which can be calculated again using the rotation matrix:
+$$ r_w = R \;r_l $$
+
+\end{document}
