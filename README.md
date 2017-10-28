@@ -14,10 +14,16 @@ git clone https://github.com/farzadab/pendulum_simulation/
 cd pendulum_simulation
 
 # for a single-link pendulum run:
-python3 sim.py
+python3 sim.py --no-gplane
 
 # for a multi-link pendulum run:
-python3 sim.py --nlinks 4
+python3 sim.py --nlinks 4 --no-gplane
+
+# for a multi-link pendulum with a ground plane:
+python3 sim.py --nlinks 4 --gplane
+
+# to plot the K/E/T energies at the end of the simulation:
+python3 sim.py --nlinks 4 --no-gplane --plot
 ```
 
 ### Parameters
@@ -29,6 +35,8 @@ python3 sim.py --nlinks 4
 |scp | constant value for position stabilization | 0.2 |
 |gsv | ground stiffness factor for velocity | 100 |
 |gsp | ground stiffness factor for position | 100 |
+|gplane | add a ground plane (can be disabled by `no-gplane`) | True |
+|plot | plot energies at the end (uses a browser) | False|
 
 ### Keyboard commands
 | Key | Effect |
