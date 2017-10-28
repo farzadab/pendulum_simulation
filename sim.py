@@ -10,8 +10,10 @@ import numpy as np
 parser = argparse.ArgumentParser(description='Simulate a multi-link pendulum')
 parser.add_argument('--nlinks', metavar='N', type=int, default=1, help='number of links')
 parser.add_argument('--timestep', metavar='dT', type=float, default=0.01, help='timestep in seconds')
-parser.add_argument('--scv', metavar='Kp', type=float, default=0.2, help='constant value for velocity stabilization')
+parser.add_argument('--scv', metavar='Kp', type=float, default=2, help='constant value for velocity stabilization')
 parser.add_argument('--scp', metavar='Kd', type=float, default=0.2, help='constant value for position stabilization')
+parser.add_argument('--gsv', metavar='KGp', type=float, default=100, help='ground stiffness factor for velocity')
+parser.add_argument('--gsp', metavar='KGd', type=float, default=100, help='ground stiffness factor for position')
 
 args = parser.parse_args()
 
@@ -19,12 +21,16 @@ window = 0     # number of the glut window
 theta = 0.0
 simTime = 0
 dT = args.timestep
+G = 9.8
 simRun = True
 RAD_TO_DEG = 180.0/3.1416
 nLinks = args.nlinks
 Kp = args.scv
 Kd = args.scp
 Kf = 0.05 * nLinks + 0.01
+KGp = args.gsv
+KGd = args.gsp
+groundPlane = 0.05
 
 #####################################################
 #### Link class, i.e., for a rigid body
@@ -80,7 +86,7 @@ def main():
 #####################################################
 
 initialTheta = [0, 0, np.pi/4]
-initialPosn = np.array([0.0, 0.0, 0.0])
+# initialPosn = np.array([0.0, 0.0, 0.0])
 linkHeight = 1.0
 fixedPoint = np.array([0.0, linkHeight/2, 0])
 
@@ -91,18 +97,21 @@ def resetSim():
         printf("Simulation reset\n")
         simRun = True
         simTime = 0
-
+        lastPosition = (1 * nLinks - .2) * np.array([0.0, linkHeight, 0.0])
         # link1.size=[0.04, 1.0, 0.12]
         for i, link in enumerate(links):
-                link.size = [0.1, linkHeight, 0.1]
+                link.size = np.array([0.1, linkHeight, 0.1])
                 link.color = [1, 0.9, 0.9]
-                if i == nLinks-1:
-                        link.theta = np.array(initialTheta)
-                else:
-                        link.theta = np.array([0.0, 0.0, 0.0])
-                link.posn = initialPosn - (i-nLinks/2) * np.array([0.0, linkHeight, 0.0]) - np.matmul(getRotMatrix(link.theta), fixedPoint)
+                # if i == nLinks-1:
+                #         link.theta = np.array(initialTheta)
+                # else:
+                #         link.theta = np.array([0.0, 0.0, 0.0])
+                # link.posn = initialPosn - (i-nLinks+.2) * np.array([0.0, linkHeight, 0.0]) - np.matmul(getRotMatrix(link.theta), fixedPoint)
+                link.theta = np.array(initialTheta)
+                link.posn = lastPosition - np.matmul(getRotMatrix(link.theta), fixedPoint)
                 link.initialTheta = link.theta
                 link.initialPosn = link.posn
+                lastPosition = link.posn - np.matmul(getRotMatrix(link.theta), fixedPoint)
                 link.vel = np.array([0.0, 0.0, 0.0])
                 link.omega = np.array([0.0, 0.0, 0.0])        ## radians per second
 
@@ -177,9 +186,20 @@ def generalizedDiag(matrices, offset=0):
         return np.vstack(rows)
 
 
+def getPosAndVelInWorld(link, p_local):
+        p_world = link.posn + np.matmul(getRotMatrix(link.theta), p_local)
+        vel = link.vel + np.matmul(link.omega, p_world)
+        return p_world, vel
+
+
+def getLowestPointWithVel(link, points):
+        points_w = [getPosAndVelInWorld(link, p) for p in points]
+        return sorted(points_w, key=lambda x: x[0][1])[0]
+
+
 def SimWorld():
         global simTime, dT, simRun, fixedPoint
-        global links, Kp, Kd, Kf
+        global links, Kp, Kd, Kf, G, KGd, KGp, groundPlane
 
         deltaTheta = 2.4
         if (simRun==False):             ## is simulation stopped?
@@ -232,21 +252,30 @@ def SimWorld():
                         )
                 diff_velocity = last_constrained_point_velocity - (link.vel + np.cross(link.omega, r_world))
                 diff_position = last_constrained_point_posn - (link.posn + r_world)
+                last_constrained_point_velocity = link.vel - np.cross(link.omega, r_world)
+                last_constrained_point_posn = (link.posn - r_world)
                 # diff_velocity = 0
                 # diff_position = 0
                 weird_term = np.cross(link.omega, np.cross(link.omega, r_world))
+                low_p, low_v = getLowestPointWithVel(link, [
+                        link.size * [+0.5, -0.5, 0],
+                        link.size * [-0.5, -0.5, 0],
+                ])
+                diff = low_p[1] - groundPlane
+                ground_force_value = (i == nLinks-1) * (low_v[1] <= 0) * (diff <= 0) * (-1 * KGp * diff - KGd * low_v[1]) * np.array([0, 1.0, 0])
+                ground_friction_value = (i == nLinks-1) * (low_v[1] <= 0) * (diff <= 0) * (-1 * Kf * np.multiply(low_v, [1., 1, 1]))
                 b_mass.append(
-                        [0, -10 * link.mass, 0,]
+                        ground_force_value + ground_friction_value + [0, -1 * G * link.mass, 0,]
                 )
                 b_mass.append(
-                        -1 * np.cross(link.omega, np.matmul(I_world, link.omega)) - Kf * np.array(link.omega)
+                        -1 * np.cross(link.omega, np.matmul(I_world, link.omega))
+                        - Kf * np.array(link.omega)
+                        - np.cross(r_world, ground_force_value + ground_friction_value)
                 )
                 b_cons.append(
                         weird_term + last_weird_term - Kp * (diff_velocity) - Kd * (diff_position)
                 )
                 last_weird_term = weird_term
-                last_constrained_point_velocity = link.vel - np.cross(link.omega, r_world)
-                last_constrained_point_posn = (link.posn - r_world)
         gen_mass_mat = generalizedDiag(gen_mass)
         J_mat = generalizedDiag(J, -3)
         z = np.zeros((J_mat.shape[1], J_mat.shape[1]))
@@ -285,7 +314,7 @@ def DrawWorld():
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);	# Clear The Screen And The Depth Buffer
         glLoadIdentity();
-        gluLookAt(2,2,6,  0,0,0,  0,1,0)
+        gluLookAt(2,2,6,  0,2,0,  0,1,0)
 
         DrawOrigin()
         for link in links:
@@ -347,6 +376,14 @@ def DrawOrigin():
         glBegin(GL_LINES)
         glVertex3f(0,0,0)
         glVertex3f(0,0,1)
+        glEnd()
+
+        glColor3f(0.8,0.8,0.8)   ## ground plane
+        glBegin(GL_POLYGON)
+        glVertex3f(1.5,0,1.5)
+        glVertex3f(-1.5,0,1.5)
+        glVertex3f(-1.5,0,-1.5)
+        glVertex3f(1.5,0,-1.5)
         glEnd()
 
 #####################################################
