@@ -22,7 +22,7 @@ python3 sim.py --nlinks 4 --no-gplane
 # for a multi-link pendulum with a ground plane:
 python3 sim.py --nlinks 4 --gplane
 
-# to plot the K/E/T energies at the end of the simulation:
+# to plot the K/E/T energies at the end of the simulation (opens up a browser):
 python3 sim.py --nlinks 4 --no-gplane --plot
 ```
 
