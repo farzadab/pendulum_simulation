@@ -262,7 +262,7 @@ def SimWorld():
                 PEs[-1] += link.mass * G * link.posn[1]
                 KEs[-1] += (
                         link.mass / 2.0 * np.dot(link.vel, link.vel) +
-                        np.matmul(r_world, np.matmul(I_world, r_world.transpose())) / 2
+                        np.matmul(link.omega, np.matmul(I_world, link.omega.transpose())) / 2
                 )
                 # z = np.zeros((3,3))
                 gen_mass.append(
